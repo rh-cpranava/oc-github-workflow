@@ -1,0 +1,67 @@
+name: OpenShift
+
+env:
+  OPENSHIFT_SERVER: ${{ secrets.OPENSHIFT_SERVER }}
+  OPENSHIFT_TOKEN: ${{ secrets.OPENSHIFT_TOKEN }}
+  OPENSHIFT_NAMESPACE: ""
+  DOCKER_SECRET: ${{ secrets.DOCKER_SECRET }}
+  GITHUB_USER: "cpranava0+githubsa"
+  REGISTRY: quay.io/cpranava0
+  IMAGE_NAME: mocf-api
+  DOCKER_TAG: 10g
+  APP_PORT: 4505
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  openshift-ci-cd:
+    name: Build and deploy to OpenShift
+    runs-on: self-hosted
+    environment: test
+
+    steps:
+    
+    - uses: actions/checkout@v1
+    
+    - name: Log in to OpenShift
+      uses: redhat-actions/oc-login@v1
+      with:
+        openshift_server_url: ${{ env.OPENSHIFT_SERVER }}
+        openshift_token: ${{ env.OPENSHIFT_TOKEN }}
+        insecure_skip_tls_verify: true
+        namespace: ${{ env.OPENSHIFT_NAMESPACE }}
+    
+    ############# TEMPLATE #############
+    ############# Use oc template to deploy Application to OCP
+    - name: OC Apply
+      run: |
+        oc apply -f k8s.yaml
+     
+    ############# BUILD AND DEPLOY #############
+    ############# Use buildah to build container
+    - name: Buildah Action
+      id: build-image
+      uses: redhat-actions/buildah-build@v2
+      with:
+        image: ${{ env.IMAGE_NAME }}
+        tags: ${{ env.DOCKER_TAG }}
+        containerfiles: |
+          ./Dockerfile
+    - name: Push to GitHub Container Repository
+      id: push-to-docker-io
+      uses: redhat-actions/push-to-registry@v2
+      with:
+        image: ${{ steps.build-image.outputs.image }}
+        tags: ${{ env.DOCKER_TAG }}
+        registry: ${{ env.REGISTRY }} 
+        username: ${{ env.GITHUB_USER }} 
+        password: ${{ env.DOCKER_SECRET }} 
+        
+    - name: Create and expose app
+      uses: redhat-actions/oc-new-app@v1
+      with:
+        app_name: mocf-build-from-scratch
+        image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.DOCKER_TAG }}
+        namespace: mocf-dummy
